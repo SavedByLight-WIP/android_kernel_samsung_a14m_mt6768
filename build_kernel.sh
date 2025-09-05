@@ -1,13 +1,14 @@
 #!/bin/bash
 
-export PATH=$(pwd)/toolchain/clang/host/linux-x86/clang-r383902/bin:$PATH
-export CROSS_COMPILE=$(pwd)/toolchain/clang/host/linux-x86/clang-r383902/bin/aarch64-linux-gnu-
-export CC=$(pwd)/toolchain/clang/host/linux-x86/clang-r383902/bin/clang
-export CLANG_TRIPLE=aarch64-linux-gnu-
-export ARCH=arm64
-export ANDROID_MAJOR_VERSION=r
+cd kernel
+python kernel_device_modules-6.6/scripts/gen_build_config.py --kernel-defconfig mediatek-bazel_defconfig --kernel-defconfig-overlays "mt6768_overlay.config o22.config" --kernel-build-config-overlays "" -m user -o ../out/target/product/a14m/obj/KERNEL_OBJ/build.config
 
-make -C $(pwd) O=$(pwd)/out KCFLAGS=-w CONFIG_SECTION_MISMATCH_WARN_ONLY=y LLVM=1 LLVM_IAS=1 a14m_defconfig
-make -C $(pwd) O=$(pwd)/out KCFLAGS=-w CONFIG_SECTION_MISMATCH_WARN_ONLY=y LLVM=1 LLVM_IAS=1 -j16
+export DEVICE_MODULES_DIR="kernel_device_modules-6.6"
+export BUILD_CONFIG="../out/target/product/a14m/obj/KERNEL_OBJ/build.config"
+export OUT_DIR="../out/target/product/a14m/obj/KLEAF_OBJ"
+export DIST_DIR="../out/target/product/a14m/obj/KLEAF_OBJ/dist"
+export DEFCONFIG_OVERLAYS="mt6768_overlay.config o22.config"
+export PROJECT="mgk_64_k66"
+export MODE="user"
 
-cp out/arch/arm64/boot/Image $(pwd)/arch/arm64/boot/Image
+./kernel_device_modules-6.6/build.sh
