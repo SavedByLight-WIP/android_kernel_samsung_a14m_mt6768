@@ -55,6 +55,50 @@ jobs:
           echo "Runner: $(uname -a)"
           python3 --version
           javac -version || true
+          
+      - name: Provide Kleaf hermetic build-tools shims
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Some Samsung/Kleaf trees expect hermetic build-tools under:
+          #   kernel/prebuilts/build-tools/path/linux-x86/
+          # OSS drops sometimes omit these prebuilts. We'll create minimal shims
+          # by symlinking any *referenced* hermetic tools to runner equivalents.
+          ROOT="${GITHUB_WORKSPACE}/kernel"
+          HERM="${ROOT}/prebuilts/build-tools/path/linux-x86"
+          mkdir -p "${HERM}"
+
+          # Gather tool names referenced by scripts (best-effort).
+          mapfile -t TOOLS < <(
+            grep -RohE 'prebuilts/build-tools/path/linux-x86/[A-Za-z0-9_.+-]+'               "${ROOT}/tools/bazel"               "${ROOT}/kernel_device_modules-6.6/kernel/kleaf/_setup_env.sh"               "${ROOT}/kernel_device_modules-6.6/build.sh"               2>/dev/null             | sed 's#.*/linux-x86/##'             | sort -u
+          )
+
+          # Ensure at least python3 is present.
+          if ! printf '%s' "${TOOLS[@]}" | grep -qx 'python3'; then
+            TOOLS+=("python3")
+          fi
+
+          echo "Hermetic tool references detected: ${TOOLS[*]}"
+
+          for t in "${TOOLS[@]}"; do
+            dest="${HERM}/${t}"
+            [ -e "${dest}" ] && continue
+
+            if command -v "${t}" >/dev/null 2>&1; then
+              ln -sf "$(command -v "${t}")" "${dest}"
+              continue
+            fi
+
+            case "${t}" in
+              python) command -v python3 >/dev/null 2>&1 && ln -sf "$(command -v python3)" "${dest}" ;;
+              sh)     command -v bash    >/dev/null 2>&1 && ln -sf "$(command -v bash)"    "${dest}" ;;
+              *)      echo "WARN: host tool not found for hermetic '${t}' (left missing)" ;;
+            esac
+          done
+
+          ls -la "${HERM}" || true
+          "${HERM}/python3" --version
 
       - name: Generate build.config
         shell: bash
