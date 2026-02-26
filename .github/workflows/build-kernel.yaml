@@ -120,20 +120,29 @@ jobs:
           ls -la "${HERM}" || true
           "${HERM}/python3" --version
 
-      - name: Bazel package markers for prebuilts clang
+      - name: Hydrate missing Kleaf clang prebuilts (kleaf/ *.bzl + BUILD.bazel)
         shell: bash
         run: |
           set -euo pipefail
-          for d in \
-            kernel/prebuilts \
-            kernel/prebuilts/clang \
-            kernel/prebuilts/clang/host \
-            kernel/prebuilts/clang/host/linux-x86 \
-            kernel/prebuilts/clang/host/linux-x86/kleaf
-          do
-            mkdir -p "$d"
-            : > "$d/BUILD.bazel"
-          done
+
+          # Destination expected by workspace.bzl: //prebuilts/clang/host/linux-x86/kleaf:...
+          DEST="${GITHUB_WORKSPACE}/kernel/prebuilts/clang/host/linux-x86/kleaf"
+          mkdir -p "${DEST}"
+
+          # Sparse checkout only the 'kleaf/' dir (fast)
+          tmp="$(mktemp -d)"
+          git -C "${tmp}" init
+          git -C "${tmp}" remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          git -C "${tmp}" fetch --depth=1 origin refs/heads/main
+          git -C "${tmp}" checkout FETCH_HEAD
+
+          # Copy kleaf support files into place
+          rsync -a --delete "${tmp}/kleaf/" "${DEST}/"
+
+          # Sanity check
+          test -f "${DEST}/clang_toolchain_repository.bzl"
+          test -f "${DEST}/BUILD.bazel"
+          ls -la "${DEST}" | head
 
       - name: Generate build.config
         shell: bash
