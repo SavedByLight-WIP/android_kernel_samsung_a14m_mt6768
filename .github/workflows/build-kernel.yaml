@@ -120,6 +120,21 @@ jobs:
           ls -la "${HERM}" || true
           "${HERM}/python3" --version
 
+      - name: Bazel package markers for prebuilts clang
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in \
+            kernel/prebuilts \
+            kernel/prebuilts/clang \
+            kernel/prebuilts/clang/host \
+            kernel/prebuilts/clang/host/linux-x86 \
+            kernel/prebuilts/clang/host/linux-x86/kleaf
+          do
+            mkdir -p "$d"
+            : > "$d/BUILD.bazel"
+          done
+
       - name: Generate build.config
         shell: bash
         run: |
