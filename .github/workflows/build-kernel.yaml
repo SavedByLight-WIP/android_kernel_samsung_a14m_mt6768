@@ -48,10 +48,19 @@ jobs:
           sudo apt-get update
           DEBIAN_FRONTEND=noninteractive sudo apt-get install -y bash coreutils findutils gawk sed grep git ca-certificates curl wget python3 python3-setuptools rsync unzip zip xz-utils file bc bison flex build-essential clang llvm lld libssl-dev libelf-dev libncurses5-dev openjdk-17-jdk-headless
 
-      - name: Setup Bazel
-        uses: jwlawson/actions-setup-bazel@v2
-        with:
-          bazel-version: "latest"
+      - name: Install Bazelisk
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
+            -o /usr/local/bin/bazel
+          chmod +x /usr/local/bin/bazel
+          bazel --version
+          ROOT="${GITHUB_WORKSPACE}/kernel"
+          BAZEL_HERM="${ROOT}/prebuilts/kernel-build-tools/bazel/linux-x86_64"
+          mkdir -p "${BAZEL_HERM}"
+          ln -sf /usr/local/bin/bazel "${BAZEL_HERM}/bazel"
+          ls -la "${BAZEL_HERM}"
 
       - name: Show environment
         shell: bash
