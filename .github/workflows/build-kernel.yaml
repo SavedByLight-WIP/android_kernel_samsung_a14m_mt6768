@@ -1,0 +1,143 @@
+name: Build Samsung MTK Kernel (6.6 Kleaf/Bazel)
+
+on:
+  workflow_dispatch:
+    inputs:
+      product:
+        description: "Android product name under out/target/product (e.g. a14m)"
+        required: true
+        default: "a14m"
+      project:
+        description: "Kleaf project prefix (must match Bazel targets, e.g. mgk_64_k66 or your new one)"
+        required: true
+        default: "mgk_64_k66"
+      mode:
+        description: "Build mode suffix used by Kleaf targets (commonly: user)"
+        required: true
+        default: "user"
+      defconfig:
+        description: "Kernel defconfig for gen_build_config.py"
+        required: true
+        default: "mediatek-bazel_defconfig"
+      defconfig_overlays:
+        description: "Space-separated defconfig overlays (e.g. 'mt6768_overlay.config o22.config')"
+        required: false
+        default: "mt6768_overlay.config o22.config"
+      target:
+        description: "Optional: override TARGET (without .<mode> suffix). Leave empty for default *_modules_install."
+        required: false
+        default: ""
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-latest
+
+    # Pin container for compatibility / reproducibility
+    #container:
+    #  image: ubuntu:20.04
+
+    env:
+      # (Kept for compatibility with older node in container)
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y bash coreutils findutils gawk sed grep git ca-certificates curl wget python3 python3-distutils rsync unzip zip xz-utils file bc bison flex build-essential clang llvm lld libssl-dev libelf-dev libncurses5-dev openjdk-17-jdk-headless
+
+      - name: Show environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Runner: $(uname -a)"
+          python3 --version
+          javac -version || true
+
+      - name: Generate build.config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PRODUCT="${{ inputs.product }}"
+          DEFCONFIG="${{ inputs.defconfig }}"
+          OVERLAYS="${{ inputs.defconfig_overlays }}"
+
+          KERNEL_OBJ="${GITHUB_WORKSPACE}/out/target/product/${PRODUCT}/obj/KERNEL_OBJ"
+          mkdir -p "${KERNEL_OBJ}"
+
+          cd kernel
+
+          python3 kernel_device_modules-6.6/scripts/gen_build_config.py             --kernel-defconfig "${DEFCONFIG}"             --kernel-defconfig-overlays "${OVERLAYS}"             --kernel-build-config-overlays ""             -m "${{ inputs.mode }}"             -o "${KERNEL_OBJ}/build.config"
+
+          echo "BUILD_CONFIG=${KERNEL_OBJ}/build.config" >> "${GITHUB_ENV}"
+          echo "PRODUCT=${PRODUCT}" >> "${GITHUB_ENV}"
+          echo "DEFCONFIG=${DEFCONFIG}" >> "${GITHUB_ENV}"
+          echo "DEFCONFIG_OVERLAYS=${OVERLAYS}" >> "${GITHUB_ENV}"
+
+          # Helpful for logs
+          echo "=== build.config (head) ==="
+          head -n 80 "${KERNEL_OBJ}/build.config" || true
+          echo "==========================="
+
+      - name: Build kernel + modules (Kleaf/Bazel)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PRODUCT="${PRODUCT}"
+          PROJECT="${{ inputs.project }}"
+          MODE="${{ inputs.mode }}"
+          TARGET_INPUT="${{ inputs.target }}"
+
+          export PROJECT MODE
+
+          export OUT_DIR="${GITHUB_WORKSPACE}/out/target/product/${PRODUCT}/obj/KLEAF_OBJ"
+          export DIST_DIR="${OUT_DIR}/dist"
+          export BUILD_CONFIG="${BUILD_CONFIG}"
+
+          mkdir -p "${OUT_DIR}" "${DIST_DIR}"
+
+          if [ -n "${TARGET_INPUT}" ]; then
+            export TARGET="${TARGET_INPUT}"
+          fi
+
+          cd kernel
+
+          # Uses tools/bazel from the tree and Kleaf rules.
+          ./kernel_device_modules-6.6/build.sh
+
+          echo "DIST_DIR=${DIST_DIR}" >> "${GITHUB_ENV}"
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+
+          # Kleaf writes the dist into OUT_DIR/dist (as passed to build.sh).
+          if [ -d "${DIST_DIR}" ]; then
+            cp -av "${DIST_DIR}" "artifacts/dist"
+          else
+            echo "ERROR: DIST_DIR not found: ${DIST_DIR}"
+            ls -la "${GITHUB_WORKSPACE}/out/target/product/${PRODUCT}/obj" || true
+            exit 1
+          fi
+
+          # Also store the generated build.config for debugging
+          if [ -f "${GITHUB_WORKSPACE}/out/target/product/${PRODUCT}/obj/KERNEL_OBJ/build.config" ]; then
+            cp -v "${GITHUB_WORKSPACE}/out/target/product/${PRODUCT}/obj/KERNEL_OBJ/build.config" artifacts/
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: "${{ inputs.product }}-kernel-6.6-kleaf"
+          path: artifacts
