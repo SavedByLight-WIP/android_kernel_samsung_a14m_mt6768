@@ -226,8 +226,43 @@ jobs:
           ensure_build_marker "${KROOT}/prebuilts/clang/host/linux-x86"
           ensure_build_marker "${KROOT}/prebuilts/clang/host/linux-x86/kleaf"
 
+                    # If clang kleaf support files are still missing (some network / sparse issues),
+          # fetch them directly from AOSP as a fallback (small and fast).
+          if [ ! -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl" ]; then
+            echo "Fallback: downloading prebuilts/clang/host/linux-x86/kleaf support files from AOSP"
+            BASE="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/heads/main/kleaf"
+            files=(
+              "android.bzl"
+              "architecture_constants.bzl"
+              "BUILD.bazel"
+              "clang_config.bzl"
+              "clang_toolchain.bzl"
+              "clang_toolchain_repository.bzl"
+              "common.bzl"
+              "empty_toolchain.bzl"
+              "linux.bzl"
+              "README.md"
+              "versions.bzl"
+              "OWNERS"
+            )
+            for f in "${files[@]}"; do
+              curl -fsSL "${BASE}/${f}?format=TEXT" | base64 -d > "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/${f}"
+            done
+          fi
+
+          test -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl"
+
           echo "clang kleaf package marker:"
           ls -la "${KROOT}/prebuilts/clang/host/linux-x86/kleaf" | head -n 20
+
+
+            rm -rf "${tmp}"
+          fi
+
+          echo "Prebuilts sanity:"
+          test -x "${KROOT}/prebuilts/kernel-build-tools/bazel/linux-x86_64/bazel" || true
+          test -e "${KROOT}/prebuilts/build-tools/path/linux-x86/python3" || true
+          test -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl"
 
       - name: Generate build.config
         shell: bash
