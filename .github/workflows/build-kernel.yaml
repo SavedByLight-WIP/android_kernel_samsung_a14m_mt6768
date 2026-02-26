@@ -143,6 +143,13 @@ jobs:
           if [ ! -d "${KROOT}/prebuilts/kernel-build-tools" ]; then
             git clone --depth=1 https://android.googlesource.com/kernel/prebuilts/build-tools "${KROOT}/prebuilts/kernel-build-tools"
           fi
+          
+          # bazel-skylib is expected as a local repository at kernel/external/bazel-skylib
+          # (WORKSPACE often points bazel_skylib to this path via kleaf_local_repository).
+          if [ ! -d "${KROOT}/external/bazel-skylib" ]; then
+            mkdir -p "${KROOT}/external"
+            git clone --depth=1 https://android.googlesource.com/platform/external/bazel-skylib "${KROOT}/external/bazel-skylib"
+          fi
 
           # Make Bazel packages legal under prebuilts/clang/... and fetch only kleaf/ support files if missing.
           mkdir -p "${KROOT}/prebuilts/clang/host/linux-x86/kleaf"
