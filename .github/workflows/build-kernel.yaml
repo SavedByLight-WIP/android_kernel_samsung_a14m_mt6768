@@ -208,6 +208,26 @@ jobs:
           ensure_external_repo "libcap"                    "https://android.googlesource.com/platform/external/libcap"
           ensure_external_repo "libcap-ng"                 "https://android.googlesource.com/platform/external/libcap-ng"
           ensure_external_repo "stardoc"                   "https://github.com/bazelbuild/stardoc.git"
+          
+          # Ensure Bazel package markers exist for the clang kleaf directory (and parents).
+          # Some OSS exports omit these BUILD files; Bazel requires them for labels like:
+          #   //prebuilts/clang/host/linux-x86/kleaf:clang_toolchain_repository.bzl
+          ensure_build_marker() {
+            local p="$1"
+            if [ -L "${p}" ]; then
+              p="$(readlink -f "${p}")"
+            fi
+            mkdir -p "${p}"
+            : > "${p}/BUILD.bazel"
+          }
+
+          ensure_build_marker "${KROOT}/prebuilts/clang"
+          ensure_build_marker "${KROOT}/prebuilts/clang/host"
+          ensure_build_marker "${KROOT}/prebuilts/clang/host/linux-x86"
+          ensure_build_marker "${KROOT}/prebuilts/clang/host/linux-x86/kleaf"
+
+          echo "clang kleaf package marker:"
+          ls -la "${KROOT}/prebuilts/clang/host/linux-x86/kleaf" | head -n 20
 
       - name: Generate build.config
         shell: bash
