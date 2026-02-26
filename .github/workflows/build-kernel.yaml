@@ -52,9 +52,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          PIN="6.4.0"
           sudo curl -L https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
             -o /usr/local/bin/bazel
           sudo chmod +x /usr/local/bin/bazel
+          
+          # Pin Bazelisk selection even without .bazelversion
+          echo "USE_BAZEL_VERSION=${PIN}" >> "${GITHUB_ENV}"
+          echo "BAZELISK_VERSION=${PIN}" >> "${GITHUB_ENV}"
+    
           bazel --version
           ROOT="${GITHUB_WORKSPACE}/kernel"
           BAZEL_HERM="${ROOT}/prebuilts/kernel-build-tools/bazel/linux-x86_64"
