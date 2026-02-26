@@ -143,35 +143,71 @@ jobs:
           if [ ! -d "${KROOT}/prebuilts/kernel-build-tools" ]; then
             git clone --depth=1 https://android.googlesource.com/kernel/prebuilts/build-tools "${KROOT}/prebuilts/kernel-build-tools"
           fi
-          
-          # bazel-skylib is expected as a local repository at kernel/external/bazel-skylib
-          # (WORKSPACE often points bazel_skylib to this path via kleaf_local_repository).
-          if [ ! -d "${KROOT}/external/bazel-skylib" ]; then
+
+          # Many Samsung/Kleaf WORKSPACE setups expect local repositories under:
+          #   kernel/external/<name>
+          # but in OSS drops these are often SYMLINKS to:
+          #   ../../external/<name>  (repo root external/)
+          #
+          # So we hydrate the repo-root external/ directory, which satisfies both:
+          #   - direct paths: ${KROOT}/external/<name> (if real dirs)
+          #   - symlinked paths: ${KROOT}/external/<name> -> ../../external/<name>
+
+          EXT_ROOT="${GITHUB_WORKSPACE}/external"
+          mkdir -p "${EXT_ROOT}"
+
+          clone_shallow() {
+            local url="$1"
+            local dest="$2"
+            if [ -e "${dest}/.git" ]; then
+              return 0
+            fi
+            rm -rf "${dest}" 2>/dev/null || true
+            git clone --depth=1 "${url}" "${dest}"
+          }
+
+          # Helper: ensure a repo exists at the path referenced by kernel/external/<name>.
+          ensure_external_repo() {
+            local name="$1" url="$2"
+            local kpath="${KROOT}/external/${name}"
+
+            # If kernel/external/<name> is a symlink, hydrate its resolved target.
+            if [ -L "${kpath}" ]; then
+              local target
+              target="$(readlink -f "${kpath}")"
+              mkdir -p "$(dirname "${target}")"
+              clone_shallow "${url}" "${target}"
+              return 0
+            fi
+
+            # If kernel/external/<name> is a real directory, clone directly into it.
+            if [ -d "${kpath}" ]; then
+              # If it's empty-ish and not a git repo, populate it.
+              if [ ! -d "${kpath}/.git" ]; then
+                rm -rf "${kpath}"
+                clone_shallow "${url}" "${kpath}"
+              fi
+              return 0
+            fi
+
+            # If it doesn't exist, create it as a symlink to repo-root external/<name> and hydrate there.
             mkdir -p "${KROOT}/external"
-            git clone --depth=1 https://android.googlesource.com/platform/external/bazel-skylib "${KROOT}/external/bazel-skylib"
-          fi
+            if [ ! -e "${kpath}" ]; then
+              ln -s "../../external/${name}" "${kpath}"
+            fi
+            clone_shallow "${url}" "${EXT_ROOT}/${name}"
+          }
 
-          # Make Bazel packages legal under prebuilts/clang/... and fetch only kleaf/ support files if missing.
-          mkdir -p "${KROOT}/prebuilts/clang/host/linux-x86/kleaf"
-          : > "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/BUILD.bazel"
-
-          if [ ! -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl" ]; then
-            tmp="$(mktemp -d)"
-            git -C "${tmp}" init -q
-            git -C "${tmp}" remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-            git -C "${tmp}" config protocol.version 2
-            git -C "${tmp}" config core.sparseCheckout true
-            echo "kleaf/" > "${tmp}/.git/info/sparse-checkout"
-            git -C "${tmp}" fetch -q --depth=1 --filter=blob:none origin refs/heads/main
-            git -C "${tmp}" checkout -q FETCH_HEAD
-            rsync -a "${tmp}/kleaf/" "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/"
-            rm -rf "${tmp}"
-          fi
-
-          echo "Prebuilts sanity:"
-          test -x "${KROOT}/prebuilts/kernel-build-tools/bazel/linux-x86_64/bazel" || true
-          test -e "${KROOT}/prebuilts/build-tools/path/linux-x86/python3" || true
-          test -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl"
+          # Required externals (as per your symlink layout)
+          ensure_external_repo "bazel-skylib"              "https://android.googlesource.com/platform/external/bazel-skylib"
+          ensure_external_repo "bazelbuild-rules_cc"       "https://github.com/bazelbuild/rules_cc.git"
+          ensure_external_repo "bazelbuild-rules_license"  "https://github.com/bazelbuild/rules_license.git"
+          ensure_external_repo "bazelbuild-rules_pkg"      "https://github.com/bazelbuild/rules_pkg.git"
+          ensure_external_repo "bazelbuild-rules_python"   "https://github.com/bazelbuild/rules_python.git"
+          ensure_external_repo "bazelbuild-rules_rust"     "https://github.com/bazelbuild/rules_rust.git"
+          ensure_external_repo "libcap"                    "https://android.googlesource.com/platform/external/libcap"
+          ensure_external_repo "libcap-ng"                 "https://android.googlesource.com/platform/external/libcap-ng"
+          ensure_external_repo "stardoc"                   "https://github.com/bazelbuild/stardoc.git"
 
       - name: Generate build.config
         shell: bash
