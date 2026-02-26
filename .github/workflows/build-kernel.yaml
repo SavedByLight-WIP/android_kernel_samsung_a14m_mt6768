@@ -120,29 +120,51 @@ jobs:
           ls -la "${HERM}" || true
           "${HERM}/python3" --version
 
-      - name: Hydrate missing Kleaf clang prebuilts (kleaf/ *.bzl + BUILD.bazel)
+      - name: Restore required AOSP prebuilts (fast, shallow)
         shell: bash
         run: |
           set -euo pipefail
 
-          # Destination expected by workspace.bzl: //prebuilts/clang/host/linux-x86/kleaf:...
-          DEST="${GITHUB_WORKSPACE}/kernel/prebuilts/clang/host/linux-x86/kleaf"
-          mkdir -p "${DEST}"
+          # 1) platform/prebuilts/build-tools   -> kernel/prebuilts/build-tools
+          # 2) kernel/prebuilts/build-tools     -> kernel/prebuilts/kernel-build-tools
+          #
+          # For clang host prebuilts, cloning the full toolchain is huge; we only pull
+          # kernel/prebuilts/clang/host/linux-x86/kleaf (Starlark support files).
 
-          # Sparse checkout only the 'kleaf/' dir (fast)
-          tmp="$(mktemp -d)"
-          git -C "${tmp}" init
-          git -C "${tmp}" remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-          git -C "${tmp}" fetch --depth=1 origin refs/heads/main
-          git -C "${tmp}" checkout FETCH_HEAD
+          KROOT="${GITHUB_WORKSPACE}/kernel"
+          mkdir -p "${KROOT}/prebuilts"
 
-          # Copy kleaf support files into place
-          rsync -a --delete "${tmp}/kleaf/" "${DEST}/"
+          # platform/prebuilts/build-tools (GitHub mirror is usually faster from Actions)
+          if [ ! -d "${KROOT}/prebuilts/build-tools" ]; then
+            git clone --depth=1 https://github.com/msft-mirror-aosp/platform.prebuilts.build-tools "${KROOT}/prebuilts/build-tools"
+          fi
 
-          # Sanity check
-          test -f "${DEST}/clang_toolchain_repository.bzl"
-          test -f "${DEST}/BUILD.bazel"
-          ls -la "${DEST}" | head
+          # kernel/prebuilts/build-tools checked out into prebuilts/kernel-build-tools
+          if [ ! -d "${KROOT}/prebuilts/kernel-build-tools" ]; then
+            git clone --depth=1 https://android.googlesource.com/kernel/prebuilts/build-tools "${KROOT}/prebuilts/kernel-build-tools"
+          fi
+
+          # Make Bazel packages legal under prebuilts/clang/... and fetch only kleaf/ support files if missing.
+          mkdir -p "${KROOT}/prebuilts/clang/host/linux-x86/kleaf"
+          : > "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/BUILD.bazel"
+
+          if [ ! -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl" ]; then
+            tmp="$(mktemp -d)"
+            git -C "${tmp}" init -q
+            git -C "${tmp}" remote add origin https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+            git -C "${tmp}" config protocol.version 2
+            git -C "${tmp}" config core.sparseCheckout true
+            echo "kleaf/" > "${tmp}/.git/info/sparse-checkout"
+            git -C "${tmp}" fetch -q --depth=1 --filter=blob:none origin refs/heads/main
+            git -C "${tmp}" checkout -q FETCH_HEAD
+            rsync -a "${tmp}/kleaf/" "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/"
+            rm -rf "${tmp}"
+          fi
+
+          echo "Prebuilts sanity:"
+          test -x "${KROOT}/prebuilts/kernel-build-tools/bazel/linux-x86_64/bazel" || true
+          test -e "${KROOT}/prebuilts/build-tools/path/linux-x86/python3" || true
+          test -f "${KROOT}/prebuilts/clang/host/linux-x86/kleaf/clang_toolchain_repository.bzl"
 
       - name: Generate build.config
         shell: bash
