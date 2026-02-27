@@ -62,7 +62,7 @@ jobs:
             repo-gki-${{ runner.os }}-${{ inputs.manifest_branch }}-
             repo-gki-${{ runner.os }}-
 
-      - name: Debug: Cache status (.repo)
+      - name: Debug - Cache status (.repo)
         run: |
           set -euo pipefail
           echo "cache-hit(.repo)=${{ steps.cache-repo.outputs.cache-hit }}"
@@ -101,7 +101,7 @@ jobs:
       # Debug listing: approximately 3 directories deep from repo root (gki/)
       # Includes hidden dirs like .repo
       # -------------------------------
-      - name: Debug: Directory summary (depth<=3) after sync
+      - name: Debug - Directory summary (depth<=3) after sync
         working-directory: gki
         run: |
           set -euo pipefail
