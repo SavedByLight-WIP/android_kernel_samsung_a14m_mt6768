@@ -1,0 +1,120 @@
+name: Workflow C - Build ACK GKI (arm64) w cache
+
+on:
+  workflow_dispatch:
+    inputs:
+      manifest_branch:
+        description: "kernel/manifest branch to sync (default: common-android15-6.6)"
+        required: true
+        default: "common-android15-6.6"
+      dist_dir:
+        description: "Distribution output directory (relative to workspace root)"
+        required: true
+        default: "out/kernel_aarch64/dist"
+      bazel_target:
+        description: "Kleaf dist target"
+        required: true
+        default: "//common:kernel_aarch64_dist"
+
+jobs:
+  build-gki:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: Checkout this repo (just for workflow scripts)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install host dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            git curl ca-certificates python3 python3-venv python3-pip \
+            bc bison flex build-essential \
+            libssl-dev libelf-dev \
+            rsync xz-utils zstd unzip \
+            jq file
+          # Repo tool (Android's "repo")
+          sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
+          sudo chmod +x /usr/local/bin/repo
+          repo --version
+
+      - name: Prepare workspace for kernel/manifest checkout
+        run: |
+          set -euo pipefail
+          mkdir -p gki
+          echo "Workspace: $(pwd)/gki"
+
+      # Bazel cache helps significantly once the sources are synced.
+      - name: Cache Bazel outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            gki/out
+          key: bazel-gki-${{ runner.os }}-${{ inputs.manifest_branch }}-${{ inputs.bazel_target }}-${{ github.sha }}
+          restore-keys: |
+            bazel-gki-${{ runner.os }}-${{ inputs.manifest_branch }}-${{ inputs.bazel_target }}-
+            bazel-gki-${{ runner.os }}-${{ inputs.manifest_branch }}-
+            bazel-gki-${{ runner.os }}-
+
+      - name: repo init (kernel/manifest)
+        working-directory: gki
+        run: |
+          set -euo pipefail
+          # Canonical GKI checkout uses kernel/manifest on branch common-android15-6.6
+          repo init -u https://android.googlesource.com/kernel/manifest -b "${{ inputs.manifest_branch }}"
+          # If you later decide to pin a specific manifest XML, you can replace this with:
+          #   mv <kernel_manifest.xml> .repo/manifests/manifest.xml && repo init -m manifest.xml
+          # as documented in GKI release build instructions.
+          echo "Repo init complete."
+
+      - name: repo sync
+        working-directory: gki
+        run: |
+          set -euo pipefail
+          # Use conservative settings for reliability on GitHub runners.
+          repo sync -c -j"$(nproc)" --force-sync --no-tags
+          echo "Repo sync complete."
+
+      - name: Guardrails - verify expected tree
+        working-directory: gki
+        run: |
+          set -euo pipefail
+          [[ -x tools/bazel ]] || { echo "ERROR: tools/bazel not found or not executable"; exit 1; }
+          [[ -d common ]] || { echo "ERROR: expected 'common' project directory missing after repo sync"; exit 1; }
+          echo "Tree looks sane."
+
+      - name: Build GKI dist (arm64) with Kleaf/Bazel
+        working-directory: gki
+        run: |
+          set -euo pipefail
+          # Build the distribution. The dist target for arm64 GKI is //common:kernel_aarch64_dist
+          # (documented in Android kernel ABI monitoring docs; and widely used by OEM docs).
+          ./tools/bazel run "${{ inputs.bazel_target }}" -- --dist_dir="${{ inputs.dist_dir }}"
+
+      - name: Summarize dist outputs
+        working-directory: gki
+        run: |
+          set -euo pipefail
+          echo "Dist directory: ${{ inputs.dist_dir }}"
+          ls -lah "${{ inputs.dist_dir }}" | sed -n '1,200p'
+          # Commonly expected outputs include boot.img and system_dlkm staging archive.
+          # (Exact list depends on release/config, but these are typical.)
+          if [[ -f "${{ inputs.dist_dir }}/boot.img" ]]; then
+            echo "Found boot.img"
+            file "${{ inputs.dist_dir }}/boot.img" || true
+          fi
+          if [[ -f "${{ inputs.dist_dir }}/system_dlkm_staging_archive.tar.gz" ]]; then
+            echo "Found system_dlkm_staging_archive.tar.gz"
+          fi
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gki-android15-6.6-arm64-dist
+          path: gki/${{ inputs.dist_dir }}
+          if-no-files-found: error
