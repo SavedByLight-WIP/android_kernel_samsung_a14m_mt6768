@@ -94,7 +94,7 @@ jobs:
           set -euo pipefail
           [[ -d .repo/manifests ]] || { echo "ERROR: .repo/manifests missing after repo init"; exit 1; }
           echo "Repo sync starting… (cache-hit(.repo)=${{ steps.cache-repo.outputs.cache-hit }})"
-          repo sync -c -j"$(nproc)" --no-tags --depth=1
+          repo sync -c -j"$(nproc)" --no-tags
           echo "Repo sync finished."
 
       # -------------------------------
