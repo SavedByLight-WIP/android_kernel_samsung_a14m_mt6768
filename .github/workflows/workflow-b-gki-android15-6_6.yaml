@@ -51,14 +51,14 @@ jobs:
           restore-keys: |
             repo-gki-${{ steps.cachekey.outputs.branch }}-
 
-      - name: Debug: Show .repo after restore
+      - name: Debug - Show .repo after restore
         if: steps.cache-repo.outputs.cache-hit == 'true'
         run: |
           echo "Cache hit for .repo ✔"
           du -sh gki/.repo || true
           ls -R gki/.repo/manifests/ -R | head -n 50 || true
 
-      - name: Debug: Show cache-miss info
+      - name: Debug - Show cache-miss info
         if: steps.cache-repo.outputs.cache-hit != 'true'
         run: |
           echo "Cache miss for .repo ❌"
@@ -86,7 +86,7 @@ jobs:
             repo sync -c -j"$(nproc)" --force-sync --no-tags
           fi
 
-      - name: Debug: List top-level synced dirs
+      - name: Debug - List top-level synced dirs
         working-directory: gki
         run: |
           echo "Listing workspace root (depth 1-3):"
